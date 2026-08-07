@@ -1,4 +1,4 @@
-# Category Assortment Tool — V0.1 / Sprint 1
+# Caastoo — V0.1 / Sprint 1
 
 Primer módulo funcional del MVP acordado.
 
@@ -36,5 +36,5 @@ Publicar el directorio `dist` o conectar el repositorio de GitHub a Netlify.
 Motor analítico: variaciones, desempeño 70/30, Pareto por segmento, casos especiales y recomendación explicable.
 
 
-## V0.3.1
+## V0.3.2
 Exportación analítica completa en cada surtido y transición, con razonamiento automático, confirmación manual y comentarios.
