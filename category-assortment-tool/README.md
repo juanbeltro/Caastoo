@@ -30,3 +30,7 @@ Publicar el directorio `dist` o conectar el repositorio de GitHub a Netlify.
 - Construcción A/B/C.
 - Exportación final.
 - IA y transformación de Excel no tabulares.
+
+
+## Sprint 2
+Motor analítico: variaciones, desempeño 70/30, Pareto por segmento, casos especiales y recomendación explicable.
