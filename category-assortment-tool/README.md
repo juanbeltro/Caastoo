@@ -34,3 +34,7 @@ Publicar el directorio `dist` o conectar el repositorio de GitHub a Netlify.
 
 ## Sprint 2
 Motor analítico: variaciones, desempeño 70/30, Pareto por segmento, casos especiales y recomendación explicable.
+
+
+## V0.3.1
+Exportación analítica completa en cada surtido y transición, con razonamiento automático, confirmación manual y comentarios.

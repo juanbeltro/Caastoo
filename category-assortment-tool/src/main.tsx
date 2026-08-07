@@ -7,7 +7,7 @@ type Row = Record<string, unknown>;
 type CanonicalKey = 'sku'|'description'|'segment'|'salesPrevious'|'unitsPrevious'|'salesCurrent'|'unitsCurrent'|'category'|'manufacturer'|'brand';
 type NormalizedRow = Record<CanonicalKey, unknown> & { salesPrevious:number|null; unitsPrevious:number|null; salesCurrent:number|null; unitsCurrent:number|null };
 type Recommendation = 'MANTENER'|'REVISAR'|'DEPURAR'|'INNOVACIÓN'|'DESCODIFICADO'|'SIN VENTA'|'DATOS INSUFICIENTES';
-type AnalysisRow = NormalizedRow & { varSales:number|null; varUnits:number|null; performance:number|null; segmentWeight:number|null; pareto:number|null; recommendation:Recommendation; reason:string };
+type AnalysisRow = NormalizedRow & { varSales:number|null; varUnits:number|null; contributionSales:number|null; contributionUnits:number|null; performance:number|null; segmentWeight:number|null; pareto:number|null; recommendation:Recommendation; reason:string };
 type AssortmentConfig = { count:number; targetA:number; reductions:number[]; minPerSegment:number };
 type AssortmentSet = { name:string; rows:AnalysisRow[]; target:number|null; actualReduction:number|null; warning:string };
 
@@ -25,7 +25,7 @@ const pct=(v:number|null)=>v===null?'—':`${(v*100).toLocaleString('es-CO',{min
 const num=(v:number|null)=>v===null?'—':v.toLocaleString('es-CO',{maximumFractionDigits:0});
 
 function buildAnalysis(rows:NormalizedRow[]):AnalysisRow[]{
-  const base:AnalysisRow[]=rows.map(r=>({...r,varSales:null,varUnits:null,performance:null,segmentWeight:null,pareto:null,recommendation:'DATOS INSUFICIENTES' as Recommendation,reason:''}));
+  const base:AnalysisRow[]=rows.map(r=>({...r,varSales:null,varUnits:null,contributionSales:null,contributionUnits:null,performance:null,segmentWeight:null,pareto:null,recommendation:'DATOS INSUFICIENTES' as Recommendation,reason:''}));
   const validForPareto=base.filter(r=>r.salesCurrent!==null && String(r.segment??'').trim());
   const groups=new Map<string,AnalysisRow[]>();
   validForPareto.forEach(r=>{const s=String(r.segment).trim();const g=groups.get(s)||[];g.push(r);groups.set(s,g)});
@@ -48,7 +48,7 @@ function buildAnalysis(rows:NormalizedRow[]):AnalysisRow[]{
     if(sp===0 && sc===0){r.recommendation='SIN VENTA';r.reason='No registra venta en ninguno de los dos períodos.';return}
     if(sp===null || sc===null || up===null || uc===null){r.recommendation='DATOS INSUFICIENTES';r.reason='Hay ventas o unidades vacías/no numéricas y no forman un patrón inequívoco de ausencia total de venta. El motor no completa datos silenciosamente.';return}
     if(sp<=0 || sc<0 || up<=0 || uc<0){r.recommendation='DATOS INSUFICIENTES';r.reason='La comparación requiere bases anteriores positivas y valores actuales no negativos.';return}
-    r.varSales=(sc-sp)/sp; r.varUnits=(uc-up)/up; r.performance=.7*r.varSales+.3*r.varUnits;
+    r.varSales=(sc-sp)/sp; r.varUnits=(uc-up)/up; r.contributionSales=sc-sp; r.contributionUnits=uc-up; r.performance=.7*r.varSales+.3*r.varUnits;
     if(r.pareto===null){r.recommendation='DATOS INSUFICIENTES';r.reason='No fue posible calcular el Pareto dentro del segmento.';return}
     if(r.pareto<=.80){r.recommendation='MANTENER';r.reason=`Core del segmento: Pareto ${pct(r.pareto)} (≤ 80%), independientemente del desempeño ${pct(r.performance)}.`;return}
     if(r.pareto<=.95){
@@ -75,7 +75,7 @@ function App(){
  const stats={rows:normalized.length,missingSku:normalized.filter(r=>!String(r.sku??'').trim()).length,missingSegment:normalized.filter(r=>!String(r.segment??'').trim()).length,duplicates:[...skuCounts.values()].filter(n=>n>1).length,invalidNumbers:normalized.filter(r=>['salesPrevious','unitsPrevious','salesCurrent','unitsCurrent'].some(k=>(r as Record<string,unknown>)[k]===null)).length};
  const counts=Object.fromEntries(recOrder.map(x=>[x,analysis.filter(r=>r.recommendation===x).length])) as Record<Recommendation,number>;
  const filtered=filter==='TODOS'?analysis:analysis.filter(r=>r.recommendation===filter);
- return <div className="app"><header><div><span className="eyebrow">RAMO · CATEGORY MANAGEMENT</span><h1>Assortment Tool <b>V0.3.0</b></h1></div><div className="privacy">● Procesamiento local · sin base de datos</div></header>
+ return <div className="app"><header><div><span className="eyebrow">RAMO · CATEGORY MANAGEMENT</span><h1>Assortment Tool <b>V0.3.1</b></h1></div><div className="privacy">● Procesamiento local · sin base de datos</div></header>
  <nav>{['Cargar','Mapear','Validar','Normalizar','Analizar','Configurar','Surtidos'].map((x,i)=><button key={x} className={step===i+1?'active':''} disabled={i+1>step} onClick={()=>i+1<=step&&setStep(i+1)}>{i+1}. {x}</button>)}</nav>
  <main>
  {step===1&&<section className="hero"><span className="tag">SPRINT 2</span><h2>De una base plana a una recomendación explicable.</h2><p>Sube una tabla plana de Excel. El archivo se lee en tu navegador y no se envía a un servidor.</p><label className="drop"><strong>Seleccionar archivo Excel</strong><span>.xlsx · .xls</span><input type="file" accept=".xlsx,.xls" onChange={e=>e.target.files?.[0]&&onFile(e.target.files[0])}/></label></section>}
@@ -162,14 +162,60 @@ function Assortments({analysis,config}:{analysis:AnalysisRow[];config:Assortment
  const sets=React.useMemo(()=>buildAssortments(analysis,config),[analysis,config]); const [active,setActive]=React.useState(0);
  const current=sets[active]; const prev=active>0?sets[active-1]:null; const prevSku=new Set((prev?.rows||[]).map(r=>String(r.sku)));
  const removed=prev?prev.rows.filter(r=>!new Set(current.rows.map(x=>String(x.sku))).has(String(r.sku))):[];
- const exportSets=()=>{const wb=XLSX.utils.book_new();sets.forEach((set,i)=>{const previous=i>0?sets[i-1]:null;const curSku=new Set(set.rows.map(r=>String(r.sku)));const rows=set.rows.map(r=>({SKU:r.sku,Descripción:r.description,Segmento:r.segment,Fabricante:r.manufacturer,Marca:r.brand,'Recomendación base':r.recommendation,'Pareto segmento':r.pareto,'Desempeño 70/30':r.performance}));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),`Tipo ${set.name}`);if(previous){const outs=previous.rows.filter(r=>!curSku.has(String(r.sku))).map(r=>({SKU:r.sku,Descripción:r.description,Segmento:r.segment,'Sale de':`Tipo ${previous.name}`,'No está en':`Tipo ${set.name}`,'Recomendación base':r.recommendation,'Pareto segmento':r.pareto,'Desempeño 70/30':r.performance}));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(outs),`${previous.name} vs ${set.name}`)}});XLSX.writeFile(wb,`surtidos_${new Date().toISOString().slice(0,10)}.xlsx`)};
+ const exportRow=(r:AnalysisRow,decision:string,exitReason:string)=>({
+   'Categoría / Familia':r.category??'',
+   'Fabricante':r.manufacturer??'',
+   'Marca':r.brand??'',
+   'Segmento':r.segment??'',
+   'SKU':r.sku??'',
+   'Descripción':r.description??'',
+   'Venta valor anterior':r.salesPrevious??0,
+   'Venta unidades anterior':r.unitsPrevious??0,
+   'Venta valor actual':r.salesCurrent??0,
+   'Venta unidades actual':r.unitsCurrent??0,
+   'Variación valor':r.varSales,
+   'Variación unidades':r.varUnits,
+   'Contribución valor':r.contributionSales,
+   'Contribución unidades':r.contributionUnits,
+   'Desempeño 70/30':r.performance,
+   'Peso valor segmento':r.segmentWeight,
+   'Peso acumulado segmento / Pareto':r.pareto,
+   'Recomendación automática':r.recommendation,
+   'Razonamiento':r.reason,
+   'Decisión surtido':decision,
+   'Razón de salida':exitReason,
+   'Confirmación manual':'',
+   'Comentarios':''
+ });
+ const exportSets=()=>{
+   const wb=XLSX.utils.book_new();
+   sets.forEach((set,i)=>{
+     const previous=i>0?sets[i-1]:null;
+     const curSku=new Set(set.rows.map(r=>String(r.sku)));
+     const rows=set.rows.map(r=>exportRow(r,`TIPO ${set.name}`,''));
+     const ws=XLSX.utils.json_to_sheet(rows);
+     ws['!cols']=[18,18,16,22,14,42,18,20,18,20,16,18,18,20,18,18,25,24,70,18,65,20,45].map(w=>({wch:w}));
+     XLSX.utils.book_append_sheet(wb,ws,`Tipo ${set.name}`);
+     if(previous){
+       const outs=previous.rows.filter(r=>!curSku.has(String(r.sku))).map(r=>exportRow(
+         r,
+         `SALE ${previous.name}→${set.name}`,
+         `Seleccionado por el motor para la reducción Tipo ${previous.name} → Tipo ${set.name}, priorizando candidatos de menor conveniencia relativa dentro de su segmento y respetando el mínimo de ${config.minPerSegment} SKU por segmento.`
+       ));
+       const wsOut=XLSX.utils.json_to_sheet(outs);
+       wsOut['!cols']=ws['!cols'];
+       XLSX.utils.book_append_sheet(wb,wsOut,`${previous.name} vs ${set.name}`)
+     }
+   });
+   XLSX.writeFile(wb,`surtidos_${new Date().toISOString().slice(0,10)}.xlsx`)
+ };
  return <section><div className="sectionTitle"><div><span className="tag success">SURTIDOS GENERADOS</span><h2>Arquitectura escalonada A → {sets[sets.length-1].name}</h2><p>Cada surtido inferior es subconjunto del anterior. Las reducciones respetan el porcentaje solicitado como meta y las protecciones definidas.</p></div><button className="primary" onClick={exportSets}>Descargar surtidos Excel ↓</button></div>
  <div className="assortmentTabs">{sets.map((s,i)=><button className={active===i?'selected':''} onClick={()=>setActive(i)} key={s.name}><span>TIPO {s.name}</span><b>{s.rows.length} SKU</b>{s.actualReduction!==null&&<small>-{(s.actualReduction*100).toFixed(1)}% vs {sets[i-1].name}</small>}</button>)}</div>
  {current.warning&&<div className="warningBox">⚠ {current.warning}</div>}
  <div className="metrics assortmentMetrics"><div><b>{current.rows.length}</b><span>SKU Tipo {current.name}</span></div><div><b>{new Set(current.rows.map(r=>String(r.segment))).size}</b><span>segmentos</span></div><div><b>{removed.length}</b><span>salen vs {prev?`Tipo ${prev.name}`:'base'}</span></div></div>
  {prev&&<><h3 className="subhead">Referencias que salen de Tipo {prev.name} → Tipo {current.name}</h3><div className="analysisTable"><table><thead><tr><th>SKU</th><th>Descripción</th><th>Segmento</th><th>Recomendación base</th><th>Pareto</th><th>70/30</th></tr></thead><tbody>{removed.map((r,i)=><tr key={i}><td>{String(r.sku??'')}</td><td>{String(r.description??'')}</td><td>{String(r.segment??'')}</td><td>{r.recommendation}</td><td>{pct(r.pareto)}</td><td>{pct(r.performance)}</td></tr>)}</tbody></table></div></>}
  <h3 className="subhead">Surtido Tipo {current.name}</h3><div className="analysisTable"><table><thead><tr><th>SKU</th><th>Descripción</th><th>Segmento</th><th>Recomendación base</th><th>Pareto</th><th>70/30</th></tr></thead><tbody>{current.rows.map((r,i)=><tr key={i}><td>{String(r.sku??'')}</td><td>{String(r.description??'')}</td><td>{String(r.segment??'')}</td><td>{r.recommendation}</td><td>{pct(r.pareto)}</td><td>{pct(r.performance)}</td></tr>)}</tbody></table></div>
- <div className="done">✓ V0.3.0: generador de surtidos escalonados activo. El porcentaje de reducción de cada transición es definido por el usuario.</div></section>
+ <div className="done">✓ V0.3.1: generador de surtidos escalonados + exportación analítica completa activo. El porcentaje de reducción de cada transición es definido por el usuario.</div></section>
 }
 
 function Summary({label,value,cls}:{label:string,value:number,cls:string}){return <div className={`summary ${cls}`}><b>{value}</b><span>{label}</span></div>}
